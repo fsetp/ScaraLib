@@ -8,6 +8,7 @@ typedef void* HID_UART_DEVICE;
 
 ////////////////////////////////////////
 //
+extern "C" __declspec(dllexport) bool ScaraInitialize(HID_UART_DEVICE hDevice);
 extern "C" __declspec(dllexport) int GetEnumDevices();
 extern "C" __declspec(dllexport) HID_UART_DEVICE DeviceOpen(int nDeviceNum);
 extern "C" __declspec(dllexport) bool DeviceClose(HID_UART_DEVICE hDevice);

@@ -2,7 +2,10 @@
 //
 #include "pch.h"
 #include "ScaraLib.h"
-#include	<math.h>
+#include <math.h>
+#include <stdio.h>
+
+#define	DEBUG
 
 ////////////////////////////////////////
 // CP2110/4 HID USB-to-UART インターフェースライブラリのインクルードファイル
@@ -65,6 +68,50 @@ int RSMove(HID_UART_DEVICE dev, short *sPoss, unsigned short sTime, BYTE id, int
 int ReadLocalEcho(HID_UART_DEVICE dev, unsigned char *sendbuf, DWORD data_len);
 int RSWriteMem(HID_UART_DEVICE dev, BYTE address, BYTE size, BYTE id, BYTE *data, int num);
 int SetTXOpenDrain(HID_UART_DEVICE dev);
+
+typedef struct tagMEM_ARRY {
+	BYTE	id;
+	BYTE	num;
+	BYTE	addr;
+	BYTE	size;
+	BYTE*	pData;
+} MEM_ARRAY;
+
+BYTE g_pTorque[] = {0x64, 0x64, 0x64, 0x64, 0x64};
+MEM_ARRAY g_Torque = {1, 5, 0x23, 1, g_pTorque};
+
+BYTE g_pParam[5][7] = {	{0x03, 0x03, 0x08, 0x08, 0x58, 0x04},
+						{0x03, 0x03, 0x08, 0x08, 0x58, 0x04},
+						{0x02, 0x02, 0x08, 0x08, 0x58, 0x02},
+						{0x02, 0x02, 0x08, 0x08, 0x58, 0x02},
+						{0x02, 0x02, 0x08, 0x08, 0x58, 0x02},
+					};
+
+MEM_ARRAY g_Param[5] = {{1, 1, 0x18, 6, g_pParam[0]},
+						{2, 1, 0x18, 6, g_pParam[1]},
+						{3, 1, 0x18, 6, g_pParam[2]},
+						{4, 1, 0x18, 6, g_pParam[3]},
+						{5, 1, 0x18, 6, g_pParam[4]},
+					};
+
+////////////////////////////////////////
+//
+bool ScaraInitialize(HID_UART_DEVICE hDevice)
+{
+	MEM_ARRAY* pArray;
+
+	pArray = &g_Torque;
+	RSWriteMem(hDevice, pArray->addr, pArray->size, pArray->id, pArray->pData, pArray->num);
+
+	for (int i = 0; i < 5; i++) {
+		pArray = &g_Param[i];
+		RSWriteMem(hDevice, pArray->addr, pArray->size, pArray->id, pArray->pData, pArray->num);
+	}
+
+	MoveXYZYawOC(hDevice, 0, 0, 0, 0, 0, 1000);
+
+	return true;
+}
 
 ////////////////////////////////////////
 //
@@ -628,6 +675,12 @@ int RSMove( HID_UART_DEVICE dev , short *sPoss, unsigned short sTime ,BYTE id,in
 	sendbuf[data_len] = sum;						// 送信バッファにチェックサムを追加
 	data_len++;										//パケット長を1byte加算
 
+#ifdef	DEBUG
+	for (int i = 0; i < (int)data_len; i++)
+		printf("%02x, ", sendbuf[i]);
+	printf("\n");
+#endif
+
 	// パケットを送信
 	ret = HidUart_Write( dev, (BYTE*) sendbuf, data_len, &len );
 	if(ret!=HID_UART_SUCCESS) return FALSE;
@@ -702,12 +755,11 @@ int ReadLocalEcho(HID_UART_DEVICE dev ,unsigned char *sendbuf,DWORD data_len)
 *************************************************/
 int RSWriteMem( HID_UART_DEVICE dev , BYTE address , BYTE size , BYTE id , BYTE *data , int num)
 {
-	unsigned char	sendbuf[256],*bufp;
+	unsigned char	sendbuf[256], *bufp;
 	unsigned char	sum;
-	unsigned char	i,j;
+	unsigned char	i, j;
 	int				ret;
-	unsigned long	len,data_len;
-
+	unsigned long	len, data_len;
 
 	// バッファクリア
 	memset( sendbuf, 0x00, sizeof( sendbuf ));
@@ -717,8 +769,8 @@ int RSWriteMem( HID_UART_DEVICE dev , BYTE address , BYTE size , BYTE id , BYTE 
 	sendbuf[1]  = (unsigned char)0xAF;				    // ヘッダー2
 	sendbuf[2]  = (unsigned char)0;						// ID(0)
 	sendbuf[3]  = (unsigned char)0x00;				    // フラグ(0x00)
-	sendbuf[4]  = (unsigned char)address;				    // アドレス(0x1E=30)
-	sendbuf[5]  = (unsigned char)size+1;			    // 長さ(4byte)
+	sendbuf[4]  = (unsigned char)address;				// アドレス(0x1E=30)
+	sendbuf[5]  = (unsigned char)size + 1;			    // 長さ(4byte)
 	sendbuf[6]  = (unsigned char)num;				    // モータの個数
 
 	//共通部分のパケット長を記録
@@ -726,24 +778,29 @@ int RSWriteMem( HID_UART_DEVICE dev , BYTE address , BYTE size , BYTE id , BYTE 
 
 	//個別のデータ作成
 	bufp = &sendbuf[7];
-	for(i=0;i<num;i++){
-		*bufp++ = id+i;								//モータID
+	for(i = 0; i< num; i++) {
+		*bufp++ = id + i;							//モータID
 		data_len++;									//パケット長を1byte加算
 
-		for(j=0;j<size;j++){
+		for(j = 0; j < size; j++){
 			*bufp++ = (unsigned char)data[j];		//データ部を1byteずつパケットに追加
 			data_len++;								//パケット長を2byte加算
 		}
 	}
 
-
 	// チェックサムの計算
 	sum = sendbuf[2];
-	for( i = 3; i < data_len; i++ ){
+	for( i = 3; i < data_len; i++ ) {
 		sum = (unsigned char)(sum ^ sendbuf[i]);
 	}
 	sendbuf[data_len] = sum;						// 送信バッファにチェックサムを追加
 	data_len++;										//パケット長を1byte加算
+
+#ifdef	DEBUG
+	for (int i = 0; i < (int)data_len; i++)
+		printf("%02x, ", sendbuf[i]);
+	printf("\n");
+#endif
 
 	// パケットを送信
 	ret = HidUart_Write( dev, (BYTE*) sendbuf, data_len, &len );
