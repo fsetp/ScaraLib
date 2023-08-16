@@ -69,6 +69,8 @@ int ReadLocalEcho(HID_UART_DEVICE dev, unsigned char *sendbuf, DWORD data_len);
 int RSWriteMem(HID_UART_DEVICE dev, BYTE address, BYTE size, BYTE id, BYTE *data, int num);
 int SetTXOpenDrain(HID_UART_DEVICE dev);
 
+////////////////////////////////////////
+//
 typedef struct tagMEM_ARRY {
 	BYTE	id;
 	BYTE	num;
@@ -94,23 +96,13 @@ MEM_ARRAY g_Param[5] = {{1, 1, 0x18, 6, g_pParam[0]},
 						{5, 1, 0x18, 6, g_pParam[4]},
 					};
 
+bool g_bDebug = false;
+
 ////////////////////////////////////////
 //
-bool ScaraInitialize(HID_UART_DEVICE hDevice)
+void SetDebugMode(bool bDebug)
 {
-	MEM_ARRAY* pArray;
-
-	pArray = &g_Torque;
-	RSWriteMem(hDevice, pArray->addr, pArray->size, pArray->id, pArray->pData, pArray->num);
-
-	for (int i = 0; i < 5; i++) {
-		pArray = &g_Param[i];
-		RSWriteMem(hDevice, pArray->addr, pArray->size, pArray->id, pArray->pData, pArray->num);
-	}
-
-	MoveXYZYawOC(hDevice, 0, 0, 0, 0, 0, 1000);
-
-	return true;
+	g_bDebug = bDebug;
 }
 
 ////////////////////////////////////////
@@ -151,6 +143,25 @@ bool DeviceClose(HID_UART_DEVICE hDevice)
 
 ////////////////////////////////////////
 //
+bool ScaraInitialize(HID_UART_DEVICE hDevice)
+{
+	MEM_ARRAY* pArray;
+
+	pArray = &g_Torque;
+	RSWriteMem(hDevice, pArray->addr, pArray->size, pArray->id, pArray->pData, pArray->num);
+
+	for (int i = 0; i < 5; i++) {
+		pArray = &g_Param[i];
+		RSWriteMem(hDevice, pArray->addr, pArray->size, pArray->id, pArray->pData, pArray->num);
+	}
+
+//	MoveXYZYawOC(hDevice, 0, 0, 0, 0, 0, 1000);
+
+	return true;
+}
+
+////////////////////////////////////////
+//
 bool MotorTorque(HID_UART_DEVICE hDevice, bool bOn, int nFrom, int nTo)
 {
 	if (nFrom <= nTo)
@@ -171,6 +182,22 @@ bool MoveXY(HID_UART_DEVICE hDevice, double x, double y, int ms)
 
 	//得られた角度にアームを動かす
 	RSMove(hDevice, sPos, ms / 10, 1, 2);
+
+	return true;
+}
+
+////////////////////////////////////////
+//
+bool MoveZ(HID_UART_DEVICE hDevice, double z, int ms)
+{
+	short sPos[5];
+	int sign = -1;
+
+	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
+	pos_to_rad(0, 0, z, 0, 0, sPos, sign, 3);
+
+	//得られた角度にアームを動かす
+	RSMove(hDevice, &sPos[2], ms / 10, 3, 1);
 
 	return true;
 }
@@ -269,6 +296,27 @@ bool MoveOC(HID_UART_DEVICE hDevice, double oc, int ms)
 	RSMove(hDevice, &sPos[4], ms / 10, 5, 1);
 
 	return true;
+}
+
+////////////////////////////////////////
+//
+double GetPos(HID_UART_DEVICE hDevice, int axis)
+{
+	short sPos[5];
+	double x, y, z, yaw, oc;
+
+	for (int i = 0; i < 5; i++)
+		RSGetAngle(hDevice, i, &sPos[i]);
+
+	rad_to_pos(&x, &y, &z, &yaw, &oc, sPos, 5);
+
+	if (g_bDebug)
+		printf("x:%lf y:%ld z:%ld yaw:%lf oc:%lf\n", x, y, z, yaw, oc);
+
+	if (axis >=0 and axis <= 5)
+		return sPos[axis];
+
+	return 0;
 }
 
 ////////////////////////////////////////
@@ -607,24 +655,21 @@ int RSGetAngle(HID_UART_DEVICE dev ,BYTE id,short *getParam)
 	return TRUE;
 }
 
-
-/************************************************
-
-	int RSMove( HID_UART_DEVICE dev , short *sPoss, unsigned short sTime ,BYTE id,int num)
-	
-	概要：モータを指定の角度に動かす。IDが連続した複数のモータを一度に動かすことが可能。
-
-	引数：
-		HID_UART_DEVICE dev	… 通信ハンドル
-		short *sPoss		… 目標位置を記録した配列変数へのポインタ。開始IDの目標値は、バッファの先頭から順に使用される
-		unsigned short sTime … 目標位置までの遷移時間(10ミリ秒単位)
-		BYTE id				… 動かすモータのID（複数のモータを動かす場合、先頭のモータのID）
-		int num				… 動かすモータ数
-
-	戻り値：
-		正常に処理を実行できたらTRUE、そうでなければFALSE
-
-*************************************************/
+////////////////////////////////////////
+//	int RSMove( HID_UART_DEVICE dev , short *sPoss, unsigned short sTime ,BYTE id,int num)
+//
+//	概要：モータを指定の角度に動かす。IDが連続した複数のモータを一度に動かすことが可能。
+//
+//	引数：
+//		HID_UART_DEVICE dev	… 通信ハンドル
+//		short *sPoss		… 目標位置を記録した配列変数へのポインタ。開始IDの目標値は、バッファの先頭から順に使用される
+//		unsigned short sTime … 目標位置までの遷移時間(10ミリ秒単位)
+//		BYTE id				… 動かすモータのID（複数のモータを動かす場合、先頭のモータのID）
+//		int num				… 動かすモータ数
+//
+//	戻り値：
+//		正常に処理を実行できたらTRUE、そうでなければFALSE
+//
 int RSMove( HID_UART_DEVICE dev , short *sPoss, unsigned short sTime ,BYTE id,int num)
 {
 	unsigned char	sendbuf[256],*bufp;
@@ -646,26 +691,25 @@ int RSMove( HID_UART_DEVICE dev , short *sPoss, unsigned short sTime ,BYTE id,in
 	sendbuf[5]  = (unsigned char)0x04+1;			    // 長さ(4byte)
 	sendbuf[6]  = (unsigned char)num;				    // モータの個数
 
-	//共通部分のパケット長を記録
+	// 共通部分のパケット長を記録
 	data_len = 7;
 
-	//個別のデータ作成
+	// 個別のデータ作成
 	bufp = &sendbuf[7];
-	for(i=0;i<num;i++){
-		*bufp++ = id+i;								//モータID
+	for (i = 0; i < num; i++){
+		*bufp++ = id + i;							//モータID
 		data_len++;									//パケット長を1byte加算
 
 		//目標位置をバッファに書き込み(2byte)
 		*bufp++ = (unsigned char)(sPoss[i]&0x00FF);
-		*bufp++ = (unsigned char)((sPoss[i]&0xFF00)>>8);
-		data_len+=2;								//パケット長を2byte加算
+		*bufp++ = (unsigned char)((sPoss[i]&0xFF00) >> 8);
+		data_len += 2;								//パケット長を2byte加算
 
 		//遷移時間をバッファに書き込み(2byte)
 		*bufp++ = (unsigned char)(sTime&0x00FF);
-		*bufp++ = (unsigned char)((sTime&0xFF00)>>8);
-		data_len+=2;								//パケット長を2byte加算
+		*bufp++ = (unsigned char)((sTime&0xFF00) >> 8);
+		data_len += 2;								//パケット長を2byte加算
 	}
-
 
 	// チェックサムの計算
 	sum = sendbuf[2];
@@ -675,11 +719,11 @@ int RSMove( HID_UART_DEVICE dev , short *sPoss, unsigned short sTime ,BYTE id,in
 	sendbuf[data_len] = sum;						// 送信バッファにチェックサムを追加
 	data_len++;										//パケット長を1byte加算
 
-#ifdef	DEBUG
-	for (int i = 0; i < (int)data_len; i++)
-		printf("%02x, ", sendbuf[i]);
-	printf("\n");
-#endif
+	if (g_bDebug) {
+		for (int i = 0; i < (int)data_len; i++)
+			printf("%02x, ", sendbuf[i]);
+		printf("\n");
+	}
 
 	// パケットを送信
 	ret = HidUart_Write( dev, (BYTE*) sendbuf, data_len, &len );
@@ -690,30 +734,27 @@ int RSMove( HID_UART_DEVICE dev , short *sPoss, unsigned short sTime ,BYTE id,in
 
 }
 
-
-/************************************************
-
-	int ReadLocalEcho(HID_UART_DEVICE dev ,unsigned char *sendbuf,DWORD data_len)
-	
-	概要：
-		送信メッセージのローカルエコーを読み出す関数。
-		引数 data_len の長さだけメッセージを受信し、 引数 *sendbuf の内容と同一か比較を行う
-
-	引数：
-		HID_UART_DEVICE dev		… 通信ハンドル
-		unsigned char *sendbuf	… 送信メッセージ内容へのポインタ
-		DWORD data_len			… 送信メッセージのサイズ
-
-	戻り値：
-		送信メッセージと同一の内容を受信できたらTRUE、そうでなければFALSE
-
-*************************************************/
+////////////////////////////////////////
+//	int ReadLocalEcho(HID_UART_DEVICE dev ,unsigned char *sendbuf,DWORD data_len)
+//
+//	概要：
+//		送信メッセージのローカルエコーを読み出す関数。
+//		引数 data_len の長さだけメッセージを受信し、 引数 *sendbuf の内容と同一か比較を行う
+//
+//	引数：
+//		HID_UART_DEVICE dev		… 通信ハンドル
+//		unsigned char *sendbuf	… 送信メッセージ内容へのポインタ
+//		DWORD data_len			… 送信メッセージのサイズ
+//
+//	戻り値：
+//		送信メッセージと同一の内容を受信できたらTRUE、そうでなければFALSE
+//
 int ReadLocalEcho(HID_UART_DEVICE dev ,unsigned char *sendbuf,DWORD data_len)
 {
 
 	unsigned char readbuf[1024];
-	DWORD len=0;
-	memset(readbuf,0,sizeof(readbuf));
+	DWORD len = 0;
+	memset(readbuf, 0, sizeof(readbuf));
 
 	//data_len のサイズだけメッセージを受信
 	HidUart_Read( dev, (BYTE*) readbuf, data_len, &len );
@@ -722,37 +763,33 @@ int ReadLocalEcho(HID_UART_DEVICE dev ,unsigned char *sendbuf,DWORD data_len)
 	if(data_len!=len) return FALSE;
 
 	//受信メッセージと送信メッセージを比較
-	for(DWORD i=0;i<len;i++){
+	for (DWORD i = 0; i < len; i++) {
 
 		//受信メッセージと送信メッセージが異なる場合、エラー
-		if(readbuf[i]!=sendbuf[i]) return FALSE;
+		if (readbuf[i] != sendbuf[i])
+			return FALSE;
 	}
 	return TRUE;
 }
 
-
-
-
-/************************************************
-
-	int int RSWriteMem( HID_UART_DEVICE dev , BYTE address , BYTE size , BYTE id , BYTE *data , int num)
-	
-	概要：
-		モータのパラメータを書き換える。連続した複数のモータ・複数のアドレスに書き込みが可能
-		アドレス・サイズ・モータ数・実データを指定する
-
-	引数：
-		HID_UART_DEVICE dev	… 通信ハンドル
-		BYTE address		… データを書き込むアドレス（アドレスの詳細はRS304MDの資料を参照）
-		BYTE size			… モータ1個当たりに書き込むデータのサイズ(byte単位)
-		BYTE id				… 動かすモータのID（複数のモータを動かす場合、先頭のモータのID）
-		BYTE *data			… 書き込みデータ内容の配列変数へのポインタ
-		int num				… 動かすモータ数
-
-	戻り値：
-		正常に処理を実行できたらTRUE、そうでなければFALSE
-
-*************************************************/
+////////////////////////////////////////
+//	int int RSWriteMem( HID_UART_DEVICE dev , BYTE address , BYTE size , BYTE id , BYTE *data , int num)
+//
+//	概要：
+//		モータのパラメータを書き換える。連続した複数のモータ・複数のアドレスに書き込みが可能
+//		アドレス・サイズ・モータ数・実データを指定する
+//
+//	引数：
+//		HID_UART_DEVICE dev	… 通信ハンドル
+//		BYTE address		… データを書き込むアドレス（アドレスの詳細はRS304MDの資料を参照）
+//		BYTE size			… モータ1個当たりに書き込むデータのサイズ(byte単位)
+//		BYTE id				… 動かすモータのID（複数のモータを動かす場合、先頭のモータのID）
+//		BYTE *data			… 書き込みデータ内容の配列変数へのポインタ
+//		int num				… 動かすモータ数
+//
+//	戻り値：
+//		正常に処理を実行できたらTRUE、そうでなければFALSE
+//
 int RSWriteMem( HID_UART_DEVICE dev , BYTE address , BYTE size , BYTE id , BYTE *data , int num)
 {
 	unsigned char	sendbuf[256], *bufp;
@@ -778,7 +815,7 @@ int RSWriteMem( HID_UART_DEVICE dev , BYTE address , BYTE size , BYTE id , BYTE 
 
 	//個別のデータ作成
 	bufp = &sendbuf[7];
-	for(i = 0; i< num; i++) {
+	for(i = 0; i < num; i++) {
 		*bufp++ = id + i;							//モータID
 		data_len++;									//パケット長を1byte加算
 
@@ -796,11 +833,11 @@ int RSWriteMem( HID_UART_DEVICE dev , BYTE address , BYTE size , BYTE id , BYTE 
 	sendbuf[data_len] = sum;						// 送信バッファにチェックサムを追加
 	data_len++;										//パケット長を1byte加算
 
-#ifdef	DEBUG
-	for (int i = 0; i < (int)data_len; i++)
-		printf("%02x, ", sendbuf[i]);
-	printf("\n");
-#endif
+	if (g_bDebug) {
+		for (int i = 0; i < (int)data_len; i++)
+			printf("%02x, ", sendbuf[i]);
+		printf("\n");
+	}
 
 	// パケットを送信
 	ret = HidUart_Write( dev, (BYTE*) sendbuf, data_len, &len );
@@ -811,21 +848,19 @@ int RSWriteMem( HID_UART_DEVICE dev , BYTE address , BYTE size , BYTE id , BYTE 
 
 }
 
-/************************************************
-
-	int SetTXOpenDrain(HID_UART_DEVICE dev )
-	
-	概要：
-		USB-to-UART（CP2110）のポート設定について、TXをOpen-Drainに設定変更する。
-		ロボット本体と通信する際には、必ずこの設定が必要（設定を変更するとロボット本体に記録される）。
-
-	引数：
-		HID_UART_DEVICE dev	… 通信ハンドル
-
-	戻り値：
-		HID_UART_STATUS にて定義されている各数値。HID_UART_SUCCESSであれば成功、それ以外は失敗
-
-*************************************************/
+////////////////////////////////////////
+//	int SetTXOpenDrain(HID_UART_DEVICE dev )
+//
+//	概要：
+//		USB-to-UART（CP2110）のポート設定について、TXをOpen-Drainに設定変更する。
+//		ロボット本体と通信する際には、必ずこの設定が必要（設定を変更するとロボット本体に記録される）。
+//
+//	引数：
+//		HID_UART_DEVICE dev	… 通信ハンドル
+//
+//	戻り値：
+//		HID_UART_STATUS にて定義されている各数値。HID_UART_SUCCESSであれば成功、それ以外は失敗
+//
 int SetTXOpenDrain(HID_UART_DEVICE dev)
 {
 	//GPIOの設定で、TX を Open-Drain に設定する必要がある
