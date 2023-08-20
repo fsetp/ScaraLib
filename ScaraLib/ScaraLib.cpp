@@ -5,8 +5,6 @@
 #include <math.h>
 #include <stdio.h>
 
-#define	DEBUG
-
 ////////////////////////////////////////
 // CP2110/4 HID USB-to-UART インターフェースライブラリのインクルードファイル
 //
@@ -311,11 +309,15 @@ double GetPos(HID_UART_DEVICE hDevice, int axis)
 	rad_to_pos(&x, &y, &z, &yaw, &oc, sPos, 5);
 
 	if (g_bDebug)
-		printf("x:%lf y:%ld z:%ld yaw:%lf oc:%lf\n", x, y, z, yaw, oc);
+		printf("x:%lf y:%lf z:%lf yaw:%lf oc:%lf\n", x, y, z, yaw, oc);
 
-	if (axis >=0 and axis <= 5)
-		return sPos[axis];
-
+	switch (axis) {
+		case 0:	return x;
+		case 1:	return y;
+		case 2:	return z;
+		case 3:	return yaw;
+		case 4:	return oc;
+	}
 	return 0;
 }
 
