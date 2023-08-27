@@ -1,12 +1,4 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Scara Robot Control
-//
-//		 https://docs.python.org/ja/3/library/ctypes.html
-//
-//	Relase
-//		Rev 1.0:2023.08.19
-//		Rev	1.1:2023.08.25
-//
 //
 #include "pch.h"
 #include "ScaraLib.h"
@@ -74,7 +66,6 @@ int RSMove(HID_UART_DEVICE dev, short *sPoss, unsigned short sTime, BYTE id, int
 int ReadLocalEcho(HID_UART_DEVICE dev, unsigned char *sendbuf, DWORD data_len);
 int RSWriteMem(HID_UART_DEVICE dev, BYTE address, BYTE size, BYTE id, BYTE *data, int num);
 int SetTXOpenDrain(HID_UART_DEVICE dev);
-bool coordinate_xy_transform(int type, double* px, double* py);
 
 ////////////////////////////////////////
 //
@@ -114,17 +105,14 @@ typedef struct tagPOSITION {
 } POSITION;
 
 static POSITION g_pos;
-static short g_yawRad;
 static bool g_bDebug = false;
 static int g_nSign = 1;			// 1:CW / -1:CCW
-static bool g_bFixYaw = true;
 
 ////////////////////////////////////////
 //
 void SetDebugMode(bool bDebug)
 {
 	g_bDebug = bDebug;
-	printf("Debug Mode %s.\n", bDebug ? "On" : "Off");
 }
 
 ////////////////////////////////////////
@@ -167,23 +155,14 @@ bool ScaraClose(HID_UART_DEVICE hDevice)
 //
 bool Initialize(HID_UART_DEVICE hDevice)
 {
-	////////////////////////////////////
-	//
-	g_pos     = {0.0, 0.0, 0.0, 0.0, 0.0};
-	g_bFixYaw = true;
-	g_nSign   = 1;			// 1:CW / -1:CCW
-
-	////////////////////////////////////
-	// backup of yaw radian
-	//
-	short sPos[5];
-	pos_to_rad(0, 0, 0, 0, 0, sPos, g_nSign, 5);
-	g_yawRad = sPos[3];
-
-	////////////////////////////////////
-	// Initial setting of servo motor
-	//
 	MEM_ARRAY* pArray;
+
+	g_pos.x    = 0;
+	g_pos.y    = 0;
+	g_pos.z    = 0;
+	g_pos.yaw  = 0;
+	g_pos.grip = 0;
+
 	pArray = &g_Torque;
 	RSWriteMem(hDevice, pArray->addr, pArray->size, pArray->id, pArray->pData, pArray->num);
 
@@ -191,6 +170,26 @@ bool Initialize(HID_UART_DEVICE hDevice)
 		pArray = &g_Param[i];
 		RSWriteMem(hDevice, pArray->addr, pArray->size, pArray->id, pArray->pData, pArray->num);
 	}
+
+//	MoveXYZYawGrip(hDevice, 0, 0, 0, 0, 0, 1000);
+
+	return true;
+}
+
+////////////////////////////////////////
+//
+bool SetPos(pos_type type, double pos)
+{
+	switch (type) {
+		case POS_X:		g_pos.x    = pos;	break;
+		case POS_Y:		g_pos.y    = pos;	break;
+		case POS_Z:		g_pos.z    = pos;	break;
+		case POS_YAW:	g_pos.yaw  = pos;	break;
+		case POS_GRIP:	g_pos.grip = pos;	break;
+	}
+
+	if (g_bDebug)
+		printf("Set Pos %d %lf\n", type, pos);
 
 	return true;
 }
@@ -211,55 +210,28 @@ bool SetDir(dir_type type)
 
 ////////////////////////////////////////
 //
-bool FixYaw(bool bFix)
+bool Move(HID_UART_DEVICE hDevice, int ms)
 {
-	g_bFixYaw = bFix;
+	short sPos[5];
 
-	if (!g_bFixYaw) {
-		////////////////////////////////////
-		// backup of yaw radian
-		//
-		short sPos[5];
-		pos_to_rad(0, 0, 0, 0, 0, sPos, g_nSign, 5);
-		g_yawRad = sPos[3];
+	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
+	pos_to_rad(g_pos.x, g_pos.y, g_pos.z, g_pos.yaw, g_pos.grip, sPos, g_nSign, 5);
+
+	if (g_bDebug) {
+		for (int i = 0; i < 5; i++)
+			printf("%d:%d ", i, (int)sPos[i]);
+		puts("");
+
+		printf("x - y diff %d\n", (int)(sPos[0] - sPos[1]));
+		printf("Yaw %d\n", (int)sPos[3]);
 	}
 
-	if (g_bDebug)
-		printf("Yaw Fix %s.\n", bFix ? "On" : "Off");
-	return true;
-}
+//	sPos[3] += (sPos[0] - sPos[1]);
 
-////////////////////////////////////////
-//
-bool SetPos(pos_type type, double pos)
-{
-	switch (type) {
-		case POS_X:		g_pos.x    = pos;	break;
-		case POS_Y:		g_pos.y    = pos;	break;
-		case POS_Z:		g_pos.z    = pos;	break;
-		case POS_YAW:	g_pos.yaw  = pos;	break;
-		case POS_GRIP:	g_pos.grip = pos;	break;
-		default:		return false;
-	}
-
-	if (g_bDebug)
-		printf("Set Pos %d %lf\n", type, pos);
+	//得られた角度にアームを動かす
+	RSMove(hDevice, sPos, ms / 10, 1, 5);
 
 	return true;
-}
-
-////////////////////////////////////////
-//
-double GetPos(pos_type type)
-{
-	switch (type) {
-		case POS_X:		return g_pos.x;
-		case POS_Y:		return g_pos.y;
-		case POS_Z:		return g_pos.z;
-		case POS_YAW:	return g_pos.yaw;
-		case POS_GRIP:	return g_pos.grip;
-		default:		return 0.0;
-	}
 }
 
 ////////////////////////////////////////
@@ -274,25 +246,81 @@ bool MotorTorque(HID_UART_DEVICE hDevice, bool bOn, int nFrom, int nTo)
 
 ////////////////////////////////////////
 //
-bool Move(HID_UART_DEVICE hDevice, int ms)
+bool MoveXY(HID_UART_DEVICE hDevice, double x, double y, int ms)
 {
 	short sPos[5];
-	double x, y;
-
-	coordinate_xy_transform(1, &x, &y);
 
 	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
-	//
-	pos_to_rad(x, y, g_pos.z, g_pos.yaw, g_pos.grip, sPos, g_nSign, 5);
-//	pos_to_rad(g_pos.x, g_pos.y, g_pos.z, g_pos.yaw, g_pos.grip, sPos, g_nSign, 5);
+	pos_to_rad(x, y, 0, 0, 0, sPos, g_nSign, 2);
 
-	if (g_bDebug)
-		printf("Yaw Radian : %d -> %d\n", (int)sPos[3], (int)g_yawRad);
+	if (g_bDebug) {
+		for (int i = 0; i < 5; i++)
+			printf("%d:%d ", i, (int)sPos[i]);
+		puts("");
 
-	////////////////////////////////////
-	//
-	if (!g_bFixYaw)
-		sPos[3] = g_yawRad;
+		printf("x - y diff %d\n", (int)(sPos[0] - sPos[1]));
+		printf("Yaw %d\n", (int)sPos[4]);
+	}
+
+	//得られた角度にアームを動かす
+	RSMove(hDevice, sPos, ms / 10, 1, 2);
+
+	return true;
+}
+
+////////////////////////////////////////
+//
+bool MoveZ(HID_UART_DEVICE hDevice, double z, int ms)
+{
+	short sPos[5];
+
+	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
+	pos_to_rad(0, 0, z, 0, 0, sPos, g_nSign, 3);
+
+	//得られた角度にアームを動かす
+	RSMove(hDevice, &sPos[2], ms / 10, 3, 1);
+
+	return true;
+}
+
+////////////////////////////////////////
+//
+bool MoveXYZ(HID_UART_DEVICE hDevice, double x, double y, double z, int ms)
+{
+	short sPos[5];
+
+	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
+	pos_to_rad(x, y, z, 0, 0, sPos, g_nSign, 3);
+
+	//得られた角度にアームを動かす
+	RSMove(hDevice, sPos, ms / 10, 1, 3);
+
+	return true;
+}
+
+////////////////////////////////////////
+//
+bool MoveXYZYaw(HID_UART_DEVICE hDevice, double x, double y, double z, double yaw, int ms)
+{
+	short sPos[5];
+
+	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
+	pos_to_rad(x, y, z, yaw, 0, sPos, g_nSign, 4);
+
+	//得られた角度にアームを動かす
+	RSMove(hDevice, sPos, ms / 10, 1, 4);
+
+	return true;
+}
+
+////////////////////////////////////////
+//
+bool MoveXYZYawGrip(HID_UART_DEVICE hDevice, double x, double y, double z, double yaw, double grip, int ms)
+{
+	short sPos[5];
+
+	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
+	pos_to_rad(x, y, z, yaw, grip, sPos, g_nSign, 5);
 
 	//得られた角度にアームを動かす
 	RSMove(hDevice, sPos, ms / 10, 1, 5);
@@ -302,20 +330,72 @@ bool Move(HID_UART_DEVICE hDevice, int ms)
 
 ////////////////////////////////////////
 //
-bool coordinate_xy_transform(int type, double* px, double* py)
+bool MoveYawGrip(HID_UART_DEVICE hDevice, double yaw, double grip, int ms)
 {
-	switch (type) {
-		case 0:
-			*px    = g_pos.x;
-			*py    = g_pos.y;
-			return true;
+	short sPos[5];
 
-		case 1:
-			*px    = g_pos.y;
-			*py    = g_pos.x;
-			return true;
+	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
+	pos_to_rad(0, 0, 0, yaw, grip, sPos, g_nSign, 5);
+
+	//得られた角度にアームを動かす
+	RSMove(hDevice, &sPos[3], ms / 10, 4, 2);
+
+	return true;
+}
+
+////////////////////////////////////////
+//
+bool MoveYaw(HID_UART_DEVICE hDevice, double yaw, int ms)
+{
+	short sPos[5];
+
+	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
+	pos_to_rad(0, 0, 0, yaw, 0, sPos, g_nSign, 4);
+
+	//得られた角度にアームを動かす
+	RSMove(hDevice, &sPos[3], ms / 10, 4, 1);
+
+	return true;
+}
+
+////////////////////////////////////////
+//
+bool MoveGrip(HID_UART_DEVICE hDevice, double grip, int ms)
+{
+	short sPos[5];
+
+	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
+	pos_to_rad(0, 0, 0, 0, grip, sPos, g_nSign, 5);
+
+	//得られた角度にアームを動かす
+	RSMove(hDevice, &sPos[4], ms / 10, 5, 1);
+
+	return true;
+}
+
+////////////////////////////////////////
+//
+double GetPos(HID_UART_DEVICE hDevice, int axis)
+{
+	short sPos[5];
+	double x, y, z, yaw, grip;
+
+	for (int i = 0; i < 5; i++)
+		RSGetAngle(hDevice, i, &sPos[i]);
+
+	rad_to_pos(&x, &y, &z, &yaw, &grip, sPos, 5);
+
+	if (g_bDebug)
+		printf("x:%lf y:%lf z:%lf yaw:%lf grip:%lf\n", x, y, z, yaw, grip);
+
+	switch (axis) {
+		case 0:	return x;
+		case 1:	return y;
+		case 2:	return z;
+		case 3:	return yaw;
+		case 4:	return grip;
 	}
-	return false;
+	return 0;
 }
 
 ////////////////////////////////////////

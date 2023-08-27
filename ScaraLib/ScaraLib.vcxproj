@@ -76,6 +76,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>C:\SiliconLabs\USBXpressHostSDK\CP2110_4\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\SiliconLabs\USBXpressHostSDK\CP2110_4\Release\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
