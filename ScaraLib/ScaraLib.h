@@ -27,6 +27,7 @@ enum dir_type {	DIR_CW	= 0,
 
 ////////////////////////////////////////
 //
+extern "C" __declspec(dllexport) void SetCoordinate(int coordinate);
 extern "C" __declspec(dllexport) void SetDebugMode(bool bDebug);
 extern "C" __declspec(dllexport) int GetEnumDevices();
 extern "C" __declspec(dllexport) HID_UART_DEVICE ScaraOpen(int nDeviceNum);

@@ -118,6 +118,14 @@ static short g_yawRad;
 static bool g_bDebug = false;
 static int g_nSign = 1;			// 1:CW / -1:CCW
 static bool g_bFixYaw = true;
+static int g_nCoordinate = 1;
+
+////////////////////////////////////////
+//
+void SetCoordinate(int coordinate)
+{
+	g_nCoordinate = coordinate;
+}
 
 ////////////////////////////////////////
 //
@@ -279,7 +287,7 @@ bool Move(HID_UART_DEVICE hDevice, int ms)
 	short sPos[5];
 	double x, y;
 
-	coordinate_xy_transform(1, &x, &y);
+	coordinate_xy_transform(g_nCoordinate, &x, &y);
 
 	// 座標を元に、アーム軸（ID1,ID2）の角度を求める
 	//
@@ -314,6 +322,12 @@ bool coordinate_xy_transform(int type, double* px, double* py)
 			*px    = g_pos.y;
 			*py    = g_pos.x;
 			return true;
+
+		case 2:
+			*px    = g_pos.y * -1;
+			*py    = g_pos.x * -1;
+			return true;
+
 	}
 	return false;
 }
